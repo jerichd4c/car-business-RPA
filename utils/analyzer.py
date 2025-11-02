@@ -113,16 +113,23 @@ class DataAnalyzer:
     def analyze_temporal_trends(self) -> pd.Series:
 
         try: 
+            # compute monthly sales trend if Sell_Date exists
+            if 'Sell_Date' in self.df.columns:
+                # ensure Sell_Date is datetime
+                self.df['Sell_Date'] = pd.to_datetime(self.df['Sell_Date'], errors='coerce')
+                # drop rows with invalid dates
+                valid_df = self.df.dropna(subset=['Sell_Date']).copy()
+                if valid_df.empty:
+                    logger.warning("No hay fechas válidas en 'Sell_Date' para analizar tendencias temporales.")
+                    return pd.Series(dtype=float)
 
-            if 'Sell_Date' not in self.df.columns:
-                self.df['Sell_Dare'] = pd.to_datetime(self.df['Sell_Date'])
-                self.df['Month'] = self.df['Sell_Date'].dt.to_period('M')
-                monthly_sales = self.df.groupby('Month')['Price_Without_IGV'].sum()
+                valid_df['Month'] = valid_df['Sell_Date'].dt.to_period('M')
+                monthly_sales = valid_df.groupby('Month')['Price_Without_IGV'].sum()
                 logger.info("Análisis de tendencias temporales completado.")
                 return monthly_sales
             else:
                 logger.error("La columna 'Sell_Date' no existe en el DataFrame.")
-                return pd.Series()
+                return pd.Series(dtype=float)
         except Exception as e:
             logger.error(f"Error analizando tendencias temporales: {str(e)}")
             return pd.Series()
@@ -136,13 +143,14 @@ class DataAnalyzer:
                 raise ValueError("Data validation failed.")
             logger.info("Iniciando análisis completo de datos.")
 
+            # Use keys expected by the visualizer
             self.results = {
-                'sales_without_igv': self.calculate_sales_without_igv(),
+                'sales_by_headquarter': self.calculate_sales_without_igv(),
                 'top_models': self.get_top_n_models(),
                 'sales_by_channel': self.analyze_sales_by_channel(),
-                'segmented_sales': self.segment_sales_by_client(),
+                'sales_by_segment': self.segment_sales_by_client(),
                 'summary_metrics': self.summarize_analysis(),
-                'temporal_trends': self.analyze_temporal_trends()
+                'monthly_sales_trend': self.analyze_temporal_trends()
             }
 
             logger.info("Análisis completo de datos finalizado.")
@@ -162,7 +170,7 @@ class DataAnalyzer:
             
             metrics = self.results['summary_metrics']
             top_models = self.results['top_models'].index[0]
-            top_headquarter = self.results['sales_without_igv'].index[0]
+            top_headquarter = self.results['sales_by_headquarter'].index[0]
             top_channel = self.results['sales_by_channel'].index[0]
 
             summary = f"""

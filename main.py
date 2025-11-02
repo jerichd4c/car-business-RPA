@@ -2,6 +2,7 @@ import os
 import sys
 from utils.data_loader import load_and_validate_data    
 from utils.analyzer import DataAnalyzer, analyze_data
+from utils.visualizer import generate_visualizations
 
 # create directories if not exist
 def setup_directories():
@@ -61,14 +62,23 @@ def main():
         print(f"Ventas Promedio: ${metrics['average_sales_without_igv']:,.2f}")
 
         print(f"Modelo Más Vendido: {results['top_models'].index[0]}")
-        print(f"Sede con Más Ventas: {results['sales_without_igv'].index[0]}")
+        print(f"Sede con Más Ventas: {results['sales_by_headquarter'].index[0]}")
         print(f"Canal con Más Ventas: {results['sales_by_channel'].index[0]}")
-
-        print ("\n Módulo de datos completado correctamente.")
-    
     except Exception as e:
         print(f"Error durante el análisis de datos: {str(e)}")
         sys.exit(1)
 
+    # generate graphs
+    print("Generando visualizaciones...")
+    try:
+        generate_visualizations(results)
+        print("Visualizaciones generadas exitosamente en 'outputs/graphs'.")
+    except Exception as e:
+        print(f"Error durante la generación de visualizaciones: {str(e)}")
+        sys.exit(1)
+
+        print ("\n Módulo de analisis y visualización completado correctamente.")
+        #todo implementar envío por whatsapp
+    
 if __name__ == "__main__":
     main()
