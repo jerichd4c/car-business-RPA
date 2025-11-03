@@ -6,3 +6,9 @@
 
 # Specific whatsapp config
 whatsapp_config.env
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import sys
 from utils.data_loader import load_and_validate_data    
@@ -34,6 +35,8 @@ def load_env_variables():
 def main():
     print("Iniciando RPA")
     print("="*50)
+    print(f"Iniciado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
 
     # setup directories and load env variables
     setup_directories()
@@ -46,9 +49,12 @@ def main():
         print(f"Archivo de datos no encontrado: {data_file}")
         print("Por favor, ejecute 'create_sample_data.py' para generar el archivo de datos de muestra.")
         sys.exit(1)
-    
+
+    print("="*50)
     # load and validate data
     print("Cargando y validando datos...")
+    print("="*50)
+
     df, validation = load_and_validate_data(data_file)
 
     if df is not None and validation['is_valid']:
@@ -64,7 +70,9 @@ def main():
         sys.exit(1)
 
     # analyze data
+    print("="*50)
     print("Iniciando análisis de datos...")
+    print("="*50)
     try:
         analyzer = DataAnalyzer(df)
         results = analyzer.full_analysis()
