@@ -18,9 +18,11 @@ data/*.xlsx
 !data/Ventas Fundamentos.xlsx
 
 # Outputs
-outputs/graficos/*.png
-outputs/*.pdf
-outputs/whatsapp_simulado.txt
+outputs/
+!outputs/.gitkeep
+PyWhatKit_DB.txt
+outputs/simulation_log.txt
+outputs/graphs/
 
 # Selenium
 whatsapp_profile/
