@@ -3,8 +3,10 @@ import sys
 from utils.data_loader import load_and_validate_data    
 from utils.analyzer import DataAnalyzer, analyze_data
 from utils.visualizer import generate_visualizations
+from utils.whatsapp_sender import WhatsAppSender, send_whatsapp_report
 
 # create directories if not exist
+
 def setup_directories():
 
     directories = ['data', 'outputs/graphs', 'utils']
@@ -12,12 +14,30 @@ def setup_directories():
         os.makedirs(directory, exist_ok=True)
         print(f"Carpeta '{directory}' creada/verificada")
 
+# load enviroment variables
+
+def load_env_variables():
+    try: 
+        from dotenv import load_dotenv
+        # load default .env first
+        load_dotenv()
+        # if a project-specific env file exists, load it (whatsapp_config.env)
+        env_file = 'whatsapp_config.env'
+        if os.path.exists(env_file):
+            load_dotenv(env_file, override=True)
+            print(f"Variables de entorno cargadas desde {env_file}.")
+        else:
+            print("Variables de entorno cargadas (desde .env si existe).")
+    except ImportError:
+        print("python-dotenv no está instalado. Asegúrese de que las variables de entorno estén configuradas manualmente.")
+
 def main():
     print("Iniciando RPA")
     print("="*50)
 
-    # setup directories
+    # setup directories and load env variables
     setup_directories()
+    load_env_variables()
 
     # verify if file exists
     data_file = 'data/Ventas_Fundamentos.xlsx'
@@ -77,8 +97,44 @@ def main():
         print(f"Error durante la generación de visualizaciones: {str(e)}")
         sys.exit(1)
 
-        print ("\n Módulo de analisis y visualización completado correctamente.")
-        #todo implementar envío por whatsapp
-    
+
+    # send whatsapp report
+    print("Enviando reporte por WhatsApp...")
+    try:
+        # get whatsapp destiny
+        destiny = os.getenv("WHATSAPP_DESTINY")
+        method = os.getenv("WHATSAPP_METHOD", "simulation")  # default to simulation
+
+        print(f"Metodo de envío: {method.upper()}")
+        if destiny:
+            print(f"Número de destino: {destiny}")
+        else:
+            print("Número de destino no encontrado.")
+
+        # normalize destiny (strip whitespace) before using
+        if destiny:
+            destiny = destiny.strip()
+
+        # send report
+        if send_whatsapp_report(results, destiny):
+            print("Reporte enviado exitosamente por WhatsApp.")
+
+            # show simulation message if apllicable
+            if method == "simulation":
+                print("MODO SIMULACION: El reporte no se enviará realmente.")
+                print("Para enviar mensajes reales:")
+                print("1. Configura TWILIO_ACCOUNT_SID y TWILIO_AUTH_TOKEN en .env")
+                print("2. Obtén un número de WhatsApp de Twilio")
+                print("3. Cambia WHATSAPP_METHOD a 'twilio'")
+                print("4. Configura WHATSAPP_DESTINY con tu número")
+        
+        else:
+            print("Error al enviar el reporte por WhatsApp.")
+    except Exception as e:
+        print(f"Error durante el envío del reporte por WhatsApp: {e}")
+        # exit program
+
+    print("PROYECTO COMPLETADO")
+
 if __name__ == "__main__":
     main()
