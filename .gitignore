@@ -13,16 +13,20 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Data files
+# Generated data files (do not commit)
 data/*.xlsx
-!data/Ventas Fundamentos.xlsx
+data/*.csv
+data/*.parquet
+!data/.gitkeep
 
 # Outputs
 outputs/
 !outputs/.gitkeep
 PyWhatKit_DB.txt
 outputs/simulation_log.txt
+outputs/simulation_message.txt
 outputs/graphs/
+outputs/wa_error_*.png
 
 # Selenium
 whatsapp_profile/
@@ -33,6 +37,16 @@ chromedriver.log
 .idea/
 *.swp
 *.swo
+*.code-workspace
+
+# Virtual environments
+.venv/
+venv/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
 
 # Logs
 *.log
