@@ -4,7 +4,7 @@ import sys
 from utils.data_loader import load_and_validate_data    
 from utils.analyzer import DataAnalyzer, analyze_data
 from utils.visualizer import generate_visualizations
-from utils.whatsapp_sender import WhatsAppSender, send_whatsapp_report
+from utils.whatsapp_sender import WhatsAppSender, send_whatsapp_report, send_whatsapp_report_simulated
 
 # create directories if not exist
 
@@ -107,12 +107,14 @@ def main():
 
 
     # send whatsapp report
-    print("Enviando reporte por WhatsApp (Twilio)...")
+    # detect simulate mode from CLI or env
+    simulate = ('--simulate' in sys.argv) or (os.getenv('WHATSAPP_SIMULATE', 'false').strip().lower() in {'1','true','yes','y'})
+    print("Enviando reporte por WhatsApp (Simulado)" if simulate else "Enviando reporte por WhatsApp (Twilio)...")
     try:
         # get whatsapp destiny
         destiny = os.getenv("WHATSAPP_DESTINY")
         
-        print("Metodo de envío: TWILIO")
+        print("Metodo de envío: SIMULADO" if simulate else "Metodo de envío: TWILIO")
         if destiny:
             print(f"Número de destino: {destiny}")
         else:
@@ -123,7 +125,12 @@ def main():
             destiny = destiny.strip()
 
         # send report
-        if send_whatsapp_report(results, destiny):
+        if simulate:
+            ok = send_whatsapp_report_simulated(results, destiny)
+        else:
+            ok = send_whatsapp_report(results, destiny)
+
+        if ok:
             print("Reporte enviado exitosamente por WhatsApp.")
         
         else:

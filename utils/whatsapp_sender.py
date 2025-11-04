@@ -1,7 +1,7 @@
 import os
 import logging
 import time
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
@@ -36,6 +36,8 @@ class WhatsAppSender:
             'twilio_account_sid': os.getenv('TWILIO_ACCOUNT_SID', '').strip() or None,
             'twilio_auth_token': os.getenv('TWILIO_AUTH_TOKEN', '').strip() or None,
             'twilio_whatsapp_from': os.getenv('TWILIO_WHATSAPP_FROM', '').strip() or None,
+            # Simulation mode (to avoid using Twilio while testing)
+            'simulate': (os.getenv('WHATSAPP_SIMULATE', 'false').strip().lower() in {'1','true','yes','y'}),
             # Retry config
             'max_retries': int(os.getenv('WHATSAPP_MAX_RETRIES', '3')),
             'wait_time': int(os.getenv('WHATSAPP_WAIT_TIME', '5')),
@@ -187,7 +189,7 @@ Puede encontrarlos en la carpeta 'outputs/graphs' del proyecto.
             logger.error(f"Error enviando graficos: {e}")
             return False
         
-    # format summary message
+    # format summary message (multi-line, readable)
     def _format_summary(self, results: Dict[str, Any]) -> str:
 
         try:
@@ -196,39 +198,40 @@ Puede encontrarlos en la carpeta 'outputs/graphs' del proyecto.
             top_headquarter = results['sales_by_headquarter'].index[0]
             top_channel = results['sales_by_channel'].index[0]
 
-            # flatten into one paragraph
-            parts = []
-            parts.append("📊 Reporte de análisis de ventas")
-            parts.append(
-                f"👥 Clientes únicos: {metrics['unique_clients']:,}. "
-                f"🧾 Total de ventas: {metrics['total_sales']:,}. "
-                f"💵 Ventas sin IGV: ${metrics['total_sales_without_igv']:,.2f}. "
-                f"💰 Ventas con IGV: ${metrics['total_sales_with_igv']:,.2f}. "
-                f"🧮 IGV recaudado: ${metrics['total_igv_collected']:,.2f}. "
-                f"📈 Venta promedio: ${metrics['average_sales_without_igv']:,.2f}."
-            )
-            parts.append(
-                f"🏆 Modelo más vendido: {top_models}. "
-                f"📍 Sede con más ventas: {top_headquarter}. "
-                f"📣 Canal con más ventas: {top_channel}."
-            )
+            # multi-line structure for better readability
+            lines: List[str] = []
+            lines.append("📊 Reporte de análisis de ventas")
+            lines.append(f"👥 Clientes únicos: {metrics['unique_clients']:,}")
+            lines.append(f"🧾 Total de ventas: {metrics['total_sales']:,}")
+            lines.append(f"💵 Ventas sin IGV: ${metrics['total_sales_without_igv']:,.2f}")
+            lines.append(f"💰 Ventas con IGV: ${metrics['total_sales_with_igv']:,.2f}")
+            lines.append(f"🧮 IGV recaudado: ${metrics['total_igv_collected']:,.2f}")
+            lines.append(f"📈 Venta promedio: ${metrics['average_sales_without_igv']:,.2f}")
 
-            # sales by headquarter inline
-            hq_details = ", ".join([f"🏢 {hq}: ${sales:,.2f}" for hq, sales in results['sales_by_headquarter'].items()])
-            parts.append(f"📍 Ventas por sede: {hq_details}.")
+            lines.append("")
+            lines.append(f"🏆 Modelo más vendido: {top_models}")
+            lines.append(f"📍 Sede con más ventas: {top_headquarter}")
+            lines.append(f"📣 Canal con más ventas: {top_channel}")
 
-            # top 5 models inline
-            top5 = []
+            # sales by headquarter (one per line)
+            lines.append("")
+            lines.append("📍 Ventas por sede:")
+            for hq, sales in results['sales_by_headquarter'].items():
+                lines.append(f"• 🏢 {hq}: ${sales:,.2f}")
+
+            # top 5 models
+            lines.append("")
+            lines.append("🔝 Top 5 modelos:")
             for i, (model, sales) in enumerate(results['top_models'].items(), 1):
                 num_emoji = {1:"1️⃣",2:"2️⃣",3:"3️⃣",4:"4️⃣",5:"5️⃣"}.get(i, f"{i}.")
-                top5.append(f"{num_emoji} {model}: ${sales:,.2f}")
+                lines.append(f"{num_emoji} {model}: ${sales:,.2f}")
                 if i >= 5:
                     break
-            parts.append("🔝 Top 5 modelos: " + "; ".join(top5) + ".")
 
-            parts.append(f"🗓️ Generado: {self._get_today_date()}.")
+            lines.append("")
+            lines.append(f"🗓️ Generado: {self._get_today_date()}")
 
-            return " ".join(parts)
+            return "\n".join(lines)
         
         except Exception as e:
             logger.error(f"Error formateando resumen: {e}")
@@ -241,7 +244,7 @@ Puede encontrarlos en la carpeta 'outputs/graphs' del proyecto.
     
     # send full report
 
-    def send_full_report(self, results: Dict[str, Any], destiny: str = None) -> bool:
+    def send_full_report(self, results: Dict[str, Any], destiny: str = None, simulate: Optional[bool] = None) -> bool:
 
         try:
             if not destiny:
@@ -253,41 +256,46 @@ Puede encontrarlos en la carpeta 'outputs/graphs' del proyecto.
 
             logger.info(f"Enviando reporte completo a {destiny}...")
 
-            # build a single-paragraph message combining summary and graph note
+            # build a multi-line message combining summary and graph note
             message = self._format_summary(results)
 
-            # optionally upload graphs to imgbb and attach as media (WhatsApp via Twilio requires public HTTPS URLs)
+            # honor simulate flag (parameter overrides env/config)
+            if simulate is None:
+                simulate = bool(self.config.get('simulate'))
+
+            # optionally upload graphs to imgbb and include ALL links in the message text only
             media_urls: Optional[List[str]] = None
             try:
                 imgbb_key = os.getenv('IMGBB_API_KEY', '').strip()
                 graphs_dir = os.path.join('outputs', 'graphs')
                 if imgbb_key and os.path.isdir(graphs_dir):
                     from utils.image_uploader import upload_images_to_imgbb
-                    # Only include a small number to keep the message lean
-                    graph_files = [
-                        os.path.join(graphs_dir, f)
-                        for f in os.listdir(graphs_dir)
-                        if os.path.splitext(f)[1].lower() in {'.png', '.jpg', '.jpeg'}
-                    ]
-                    # Sort by modified time desc to prefer latest graphs
-                    graph_files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-                    uploaded = upload_images_to_imgbb(graph_files, imgbb_key, name_prefix='carbiz_report', max_count=3)
+                    # Get graph files in a fixed semantic order
+                    graph_title_and_paths = self._get_graphs_in_order(graphs_dir)
+                    ordered_paths = [p for (_t, p) in graph_title_and_paths]
+                    uploaded = upload_images_to_imgbb(ordered_paths, imgbb_key, name_prefix='carbiz-report', max_count=len(ordered_paths))
                     if uploaded:
-                        media_urls = uploaded
-                        # Add URLs to message as a backup reference too
-                        urls_text = " ".join(uploaded)
-                        message += f"  🖼️ Gráficos en línea: {urls_text}"
+                        # Compose a formatted, numbered list of links
+                        message += "\n\n🖼️ Gráficos en línea:\n"
+                        for idx, ((title, _path), url) in enumerate(zip(graph_title_and_paths, uploaded), start=1):
+                            message += f"{idx}. {title}: {url}\n"
                 else:
-                    message += "  🖼️ Los gráficos del análisis se guardaron en la carpeta outputs/graphs."
+                    message += "\n\n🖼️ Los gráficos del análisis se guardaron en la carpeta outputs/graphs."
             except Exception as e:
                 logging.warning(f"No se pudieron subir los gráficos a imgbb: {e}")
-                message += "  🖼️ Los gráficos del análisis se guardaron en la carpeta outputs/graphs."
+                message += "\n\n🖼️ Los gráficos del análisis se guardaron en la carpeta outputs/graphs."
+
+            # if simulate, skip Twilio and write simulation output
+            if simulate:
+                logger.info("Modo simulación activo: no se enviará mensaje por Twilio.")
+                return self.simulate_send_with_graph_urls(message)
 
             try:
-                success = self.send_message(message, destiny, linked_file=media_urls)
+                # send only text with links; do not attach media
+                success = self.send_message(message, destiny, linked_file=None)
                 return success
             except TwilioDailyLimitExceeded:
-                # Fallback to simulation including ALL graph URLs
+                # fallback to simulation including ALL graph URLs
                 logger.warning("Límite diario de Twilio alcanzado: simulando envío e incluyendo URLs de todos los gráficos.")
                 return self.simulate_send_with_graph_urls(message)
         
@@ -303,35 +311,32 @@ Puede encontrarlos en la carpeta 'outputs/graphs' del proyecto.
             graphs_dir = os.path.join('outputs', 'graphs')
             os.makedirs('outputs', exist_ok=True)
 
-            # collect all images
-            graph_files: List[str] = []
-            if os.path.isdir(graphs_dir):
-                graph_files = [
-                    os.path.join(graphs_dir, f)
-                    for f in os.listdir(graphs_dir)
-                    if os.path.splitext(f)[1].lower() in {'.png', '.jpg', '.jpeg'}
-                ]
+            # collect images in fixed semantic order
+            graph_title_and_paths = self._get_graphs_in_order(graphs_dir)
+            graph_files: List[str] = [p for (_t, p) in graph_title_and_paths]
 
             urls: List[str] = []
             imgbb_key = os.getenv('IMGBB_API_KEY', '').strip()
             if imgbb_key and graph_files:
                 try:
                     from utils.image_uploader import upload_images_to_imgbb
-                    # upload ALL collected images
-                    urls = upload_images_to_imgbb(graph_files, imgbb_key, name_prefix='carbiz_report', max_count=len(graph_files))
+                    # upload ALL collected images preserving order
+                    urls = upload_images_to_imgbb(graph_files, imgbb_key, name_prefix='carbiz-report', max_count=len(graph_files))
                 except Exception as e:
                     logging.warning(f"Falló la subida a imgbb en modo simulación: {e}")
 
             # compose simulated message
             message = base_message
             if urls:
-                message += "  🖼️ Gráficos en línea (simulado): " + " ".join(urls)
+                message += "\n\n🖼️ Gráficos en línea (simulado):\n"
+                for idx, ((title, _path), url) in enumerate(zip(graph_title_and_paths, urls), start=1):
+                    message += f"{idx}. {title}: {url}\n"
             else:
                 if graph_files:
                     # Fallback to local file paths if no URLs
-                    message += "  🗂️ Gráficos locales (simulado): " + " ".join(graph_files)
+                    message += "\n\n🗂️ Gráficos locales (simulado):\n" + "\n".join(graph_files)
                 else:
-                    message += "  ⚠️ No se encontraron gráficos para adjuntar."
+                    message += "\n\n⚠️ No se encontraron gráficos para adjuntar."
 
             # write simulation log and message snapshot
             ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -348,6 +353,32 @@ Puede encontrarlos en la carpeta 'outputs/graphs' del proyecto.
         except Exception as e:
             logger.error(f"Error en simulación con URLs: {e}")
             return False
+
+    def _get_graphs_in_order(self, graphs_dir: str) -> List[Tuple[str, str]]:
+        """Return a list of (title, absolute_path) for graph images in a fixed, user-friendly order.
+        Only include files that exist.
+        Order:
+          1. Resumen del Dashboard (dashboard_summary.png)
+          2. Tendencia Mensual (monthly_sales_trend.png)
+          3. Ventas por Segmento (sales_by_segment.png)
+          4. Ventas por Canal (sales_by_channel.png)
+          5. Top Modelos (top_models.png)
+          6. Ventas por Sede (sales_by_headquarter.png)
+        """
+        mapping = [
+            ("Resumen del Dashboard", "dashboard_summary.png"),
+            ("Tendencia Mensual", "monthly_sales_trend.png"),
+            ("Ventas por Segmento", "sales_by_segment.png"),
+            ("Ventas por Canal", "sales_by_channel.png"),
+            ("Top Modelos", "top_models.png"),
+            ("Ventas por Sede", "sales_by_headquarter.png"),
+        ]
+        result: List[Tuple[str, str]] = []
+        for title, fname in mapping:
+            path = os.path.join(graphs_dir, fname)
+            if os.path.isfile(path):
+                result.append((title, path))
+        return result
         
 # aux function for direct use
 def send_whatsapp_report(results: Dict[str, Any], destiny: str= None) -> bool:
@@ -357,4 +388,13 @@ def send_whatsapp_report(results: Dict[str, Any], destiny: str= None) -> bool:
         return sender.send_full_report(results, destiny)
     except Exception as e:
         logging.error(f"Error enviando reporte de WhatsApp: {e}")
+        return False
+
+# aux function to force simulation (no Twilio usage)
+def send_whatsapp_report_simulated(results: Dict[str, Any], destiny: str = None) -> bool:
+    try:
+        sender = WhatsAppSender()
+        return sender.send_full_report(results, destiny, simulate=True)
+    except Exception as e:
+        logging.error(f"Error enviando reporte de WhatsApp en modo simulación: {e}")
         return False
